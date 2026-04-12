@@ -80,23 +80,34 @@ bk_2 = o3.number_input("Odds: 2", value=6.50)
 bk_ov25 = o4.number_input("Odds: Ov 2.5", value=1.65)
 bk_gg = o5.number_input("Odds: GG", value=1.75)
 
+# --- CACHED SIMULATION ENGINE ---
+@st.cache_data
+def run_simulation(h_xg, a_xg):
+    h_sim = np.random.poisson(h_xg, 10000)
+    a_sim = np.random.poisson(a_xg, 10000)
+    half_tot = np.random.poisson((h_xg + a_xg) * 0.44, 10000)
+    return h_sim, a_sim, half_tot
+
 # --- EXECUTION ---
 if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
     def f_score(f): 
         if not f: return 1.0
         clean = f.upper().replace(" ", "")
         pts = sum({'W':1,'D':0.5,'L':0}.get(c, 0.5) for c in clean)
-        return 0.9 + ((pts/max(1,len(clean))) * 0.2)
+        # Clamped form score to prevent extreme outliers
+        return np.clip(0.9 + ((pts/max(1,len(clean))) * 0.2), 0.8, 1.2)
     
     m_int = {"Standard League": 1.0, "Local Derby": 1.15, "Cup Final": 1.3, "Friendly": 0.8}[m_type]
     
-    h_xg = ((h_sot * 0.16) + (h_bc * 0.44) + (h_pos * 0.005)) * f_score(h_form) * (1 - h_penalty) * h_adv * m_int * (1/max(0.5, a_def))
-    a_xg = ((a_sot * 0.16) + (a_bc * 0.44) + (a_pos * 0.005)) * f_score(a_form) * (1 - a_penalty) * m_int * (1/max(0.5, h_def))
+    # PROTECTIVE LOGIC: max(0.01, ...) prevents Poisson from crashing on negative values
+    h_xg_raw = ((h_sot * 0.16) + (h_bc * 0.44) + (h_pos * 0.005)) * f_score(h_form) * (1 - h_penalty) * h_adv * m_int * (1/max(0.5, a_def))
+    a_xg_raw = ((a_sot * 0.16) + (a_bc * 0.44) + (a_pos * 0.005)) * f_score(a_form) * (1 - a_penalty) * m_int * (1/max(0.5, h_def))
     
-    h_sim = np.random.poisson(h_xg, 10000)
-    a_sim = np.random.poisson(a_xg, 10000)
+    h_xg = max(0.01, h_xg_raw)
+    a_xg = max(0.01, a_xg_raw)
+    
+    h_sim, a_sim, half_tot = run_simulation(h_xg, a_xg)
     tot = h_sim + a_sim
-    half_tot = np.random.poisson((h_xg + a_xg) * 0.44, 10000)
 
     markets = [
         {"Market": "1x2: Home (1)", "Prob": np.mean(h_sim > a_sim), "Book": bk_1},
@@ -109,6 +120,30 @@ if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
         {"Market": "Double Chance (X2)", "Prob": np.mean(a_sim >= h_sim), "Book": 2.40},
         {"Market": "Double Chance (12)", "Prob": np.mean(h_sim != a_sim), "Book": 1.22},
         {"Market": "Corners Over 9.5", "Prob": 0.52 if (h_sot+a_sot) > 9 else 0.45, "Book": 1.85},
+        {"Market": "Over 0.5 Goals", "Prob": np.mean(tot > 0.5), "Book": 1.05},
+        {"Market": "Over 1.5 Goals", "Prob": np.mean(tot > 1.5), "Book": 1.25},
+        {"Market": "Over 2.5 Goals", "Prob": np.mean(tot > 2.5), "Book": bk_ov25},
+        {"Market": "Over 3.5 Goals", "Prob": np.mean(tot > 3.5), "Book": 2.80},
+        {"Market": "Over 4.5 Goals", "Prob": np.mean(tot > 4.5), "Book": 5.50},
+        {"Market": "Handicap: Home (-1.5)", "Prob": np.mean(h_sim - a_sim > 1.5), "Book": 2.10},
+        {"Market": "1st Half: Over 0.5", "Prob": np.mean(half_tot > 0.5), "Book": 1.40},
+        {"Market": "1st Half: Over 1.5", "Prob": np.mean(half_tot > 1.5), "Book": 2.90},
+        {"Market": "1st Half: Over 2.5", "Prob": np.mean(half_tot > 2.5), "Book": 7.00}
+    ]
+
+    df = pd.DataFrame(markets)
+    # Safer True Odds calculation
+    df["True Odds"] = df["Prob"].apply(lambda x: round(1/x, 2) if x > 0.001 else "INF")
+    df["Edge %"] = df.apply(lambda r: round(((r['Prob'] * r['Book']) - 1) * 100, 1) if (r['Book'] > 0 and isinstance(r['True Odds'], float)) else 0, axis=1)
+
+    st.table(df[['Market', 'Prob', 'True Odds', 'Edge %']].style.format({"Prob": "{:.1%}"}))
+    
+    val = df[df["Edge %"] > 0]
+    if not val.empty:
+        best = val.loc[val["Edge %"].idxmax()]
+        st.success(f"💎 **BEST VALUE:** {best['Market']} ({best['Edge %']}% Edge)")
+    else:
+        st.warning("⚠️ No positive edge found in current markets.")
         {"Market": "Over 0.5 Goals", "Prob": np.mean(tot > 0.5), "Book": 1.05},
         {"Market": "Over 1.5 Goals", "Prob": np.mean(tot > 1.5), "Book": 1.25},
         {"Market": "Over 2.5 Goals", "Prob": np.mean(tot > 2.5), "Book": bk_ov25},
