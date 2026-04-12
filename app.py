@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 1. STUDIO-GRADE UI CONFIG ---
+# --- 1. STUDIO-GRADE UI CONFIG (FIXED SYNTAX) ---
 st.set_page_config(page_title="HighStakes: Elite Command", layout="wide")
 st.markdown("""
     <style>
@@ -77,4 +77,51 @@ h_def = r4.number_input(f"{h_name or 'H'} Def. Rating", value=1.0)
 a_def = r4.number_input(f"{a_name or 'A'} Def. Rating", value=1.0)
 
 # --- SECTION 4: ODDS & SIMULATION ---
-st.markdown("
+st.markdown("## 💰 Market Analysis")
+o1, o2, o3, o4, o5 = st.columns(5)
+bk_1 = o1.number_input("Bookie: 1", value=0.0)
+bk_x = o2.number_input("Bookie: X", value=0.0)
+bk_2 = o3.number_input("Bookie: 2", value=0.0)
+bk_ov25 = o4.number_input("Bookie: Ov 2.5", value=0.0)
+bk_gg = o5.number_input("Bookie: GG", value=0.0)
+
+if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
+    h_base = ((h_sot * 0.18) + (h_bc * 0.40) + (h_pos * 0.005)) * (1 - (h_pen * 0.12)) * (1/a_def)
+    a_base = ((a_sot * 0.18) + (a_bc * 0.40) + (a_pos * 0.005)) * (1 - (a_pen * 0.12)) * (1/h_def)
+    
+    m_int = {"Friendly": 0.8, "League Match": 1.0, "Local Derby": 1.2, "Relegation Battle": 1.15, "Title Decider": 1.3, "Cup Final": 1.4}[m_seriousness]
+    h_final, a_final = h_base * m_int, a_base * m_int
+    
+    h_sim, a_sim = np.random.poisson(max(0.1, h_final), 10000), np.random.poisson(max(0.1, a_final), 10000)
+    total_goals = h_sim + a_sim
+    
+    # FINAL TRUTHFUL MARKET LIST
+    data = [
+        {"Market": "HOME WIN (1)", "Prob": np.mean(h_sim > a_sim), "Bookie": bk_1},
+        {"Market": "DRAW (X)", "Prob": np.mean(h_sim == a_sim), "Bookie": bk_x},
+        {"Market": "AWAY WIN (2)", "Prob": np.mean(h_sim < a_sim), "Bookie": bk_2},
+        {"Market": "GG (BTTS)", "Prob": np.mean((h_sim > 0) & (a_sim > 0)), "Bookie": bk_gg},
+        {"Market": "NG (No Goal)", "Prob": 1 - np.mean((h_sim > 0) & (a_sim > 0)), "Bookie": 1.90},
+        {"Market": "Double Chance (1X)", "Prob": np.mean(h_sim >= a_sim), "Bookie": 1.30},
+        {"Market": "Double Chance (X2)", "Prob": np.mean(a_sim >= h_sim), "Bookie": 1.40},
+        {"Market": "Double Chance (12)", "Prob": np.mean(h_sim != a_sim), "Bookie": 1.25},
+        {"Market": "Over 0.5 Goals", "Prob": np.mean(total_goals > 0.5), "Bookie": 1.05},
+        {"Market": "Over 1.5 Goals", "Prob": np.mean(total_goals > 1.5), "Bookie": 1.25},
+        {"Market": "Over 2.5 Goals", "Prob": np.mean(total_goals > 2.5), "Bookie": bk_ov25},
+        {"Market": "Over 3.5 Goals", "Prob": np.mean(total_goals > 3.5), "Bookie": 3.20},
+        {"Market": "Over 4.5 Goals", "Prob": np.mean(total_goals > 4.5), "Bookie": 5.50},
+        {"Market": "3+ Goals Streak (Yes)", "Prob": np.mean(h_sim >= 3) or np.mean(a_sim >= 3), "Bookie": 2.20},
+        {"Market": "Handicap (-1.5 Home)", "Prob": np.mean((h_sim - 1.5) > a_sim), "Bookie": 3.80},
+        {"Market": "Corners Over 9.5", "Prob": 1.0 if (h_sot + a_sot) * 1.4 > 9.5 else 0.45, "Bookie": 1.80},
+        {"Market": "1st Half Over 0.5", "Prob": np.mean(total_goals * 0.44 > 0.5), "Bookie": 1.40},
+        {"Market": "1st Half Over 1.5", "Prob": np.mean(total_goals * 0.44 > 1.5), "Bookie": 2.80},
+        {"Market": "1st Half Over 2.5", "Prob": np.mean(total_goals * 0.44 > 2.5), "Bookie": 6.00}
+    ]
+
+    for d in data: 
+        d["True Odds"] = 1/d["Prob"] if d["Prob"] > 0.01 else "High"
+        d["Value"] = (d["Prob"] * d["Bookie"]) - 1 if d["Bookie"] > 0 else -1
+    
+    st.table(pd.DataFrame(data).style.format({"Prob": "{:.1%}", "Value": "{:.1%}"}))
+    best = pd.DataFrame(data).loc[pd.DataFrame(data)['Value'].idxmax()]
+    st.success(f"💎 **HIGHSTAKES SUMMARY:** Best value in **{best['Market']}** with a **{best['Value']:.1%}** edge.")
