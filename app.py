@@ -37,7 +37,7 @@ with col2:
 
 with col3:
     m_type = st.selectbox("Match Category", ["Standard League", "Local Derby", "Cup Final", "Friendly"])
-    h_adv = st.number_input("Home Field Advantage (1.0 = Neutral)", value=1.10, step=0.05)
+    h_adv = st.number_input("Home Field Advantage", value=1.10, step=0.05)
     h2h_data = st.text_area("H2H Context", "History/Trends...", height=68)
 
 # --- SECTION 2: THE INJURY CLINIC ---
@@ -80,9 +80,8 @@ bk_2 = o3.number_input("Odds: 2", value=6.50)
 bk_ov25 = o4.number_input("Odds: Ov 2.5", value=1.65)
 bk_gg = o5.number_input("Odds: GG", value=1.75)
 
-# --- ENGINE ---
+# --- EXECUTION ---
 if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
-    # Form logic
     def f_score(f): 
         if not f: return 1.0
         clean = f.upper().replace(" ", "")
@@ -91,11 +90,9 @@ if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
     
     m_int = {"Standard League": 1.0, "Local Derby": 1.15, "Cup Final": 1.3, "Friendly": 0.8}[m_type]
     
-    # Core xG Formula
     h_xg = ((h_sot * 0.16) + (h_bc * 0.44) + (h_pos * 0.005)) * f_score(h_form) * (1 - h_penalty) * h_adv * m_int * (1/max(0.5, a_def))
     a_xg = ((a_sot * 0.16) + (a_bc * 0.44) + (a_pos * 0.005)) * f_score(a_form) * (1 - a_penalty) * m_int * (1/max(0.5, h_def))
     
-    # Simulations
     h_sim = np.random.poisson(h_xg, 10000)
     a_sim = np.random.poisson(a_xg, 10000)
     tot = h_sim + a_sim
@@ -132,42 +129,4 @@ if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
     val = df[df["Edge %"] > 0]
     if not val.empty:
         best = val.loc[val["Edge %"].idxmax()]
-        st.success(f"💎 **BEST VALUE:** {best['Market']} with a {best['Edge %']}% Edge.")
-        {"Market": "Over 1.5 Goals", "Prob": np.mean(tot > 1.5), "Book": 1.25},
-        {"Market": "Over 2.5 Goals", "Prob": np.mean(tot > 2.5), "Book": bk_ov25},
-        {"Market": "Over 3.5 Goals", "Prob": np.mean(tot > 3.5), "Book": 2.80},
-        {"Market": "Over 4.5 Goals", "Prob": np.mean(tot > 4.5), "Book": 5.50},
-        {"Market": "Handicap: Home (-1.5)", "Prob": np.mean(h_sim - a_sim > 1.5), "Book": 2.10},
-        {"Market": "1st Half: Over 0.5", "Prob": np.mean(half_tot > 0.5), "Book": 1.40},
-        {"Market": "1st Half: Over 1.5", "Prob": np.mean(half_tot > 1.5), "Book": 2.90},
-        {"Market": "1st Half: Over 2.5", "Prob": np.mean(half_tot > 2.5), "Book": 7.00},
-    ]
-
-    df = pd.DataFrame(markets)
-    df["True Odds"] = df["Prob"].apply(lambda x: round(1/x, 2) if x > 0.01 else "High")
-    df["Value Edge %"] = df.apply(lambda r: round(((r['Prob'] * r['Book']) - 1) * 100, 1) if r['Book'] > 0 else 0, axis=1)
-
-    st.table(df[['Market', 'Prob', 'True Odds', 'Value Edge %']].style.format({"Prob": "{:.1%}"}))
-    
-    val = df[df["Value Edge %"] > 0]
-    if not val.empty:
-        best = val.loc[val["Value Edge %"].idxmax()]
-        st.success(f"💎 **BEST VALUE:** {best['Market']} with a {best['Value Edge %']}% Edge.")
-        {"Market": "Over 1.5 Goals", "Prob": np.mean(tot > 1.5), "Bookie": 1.25},
-        {"Market": "Over 2.5 Goals", "Prob": np.mean(tot > 2.5), "Bookie": bk_ov25},
-        {"Market": "Over 3.5 Goals", "Prob": np.mean(tot > 3.5), "Bookie": 2.80},
-        {"Market": "Over 4.5 Goals", "Prob": np.mean(tot > 4.5), "Bookie": 5.50},
-        {"Market": "Handicap (-1.5 Home)", "Prob": np.mean(h_sim - a_sim > 1.5), "Bookie": 2.20},
-        {"Market": "1st Half Over 0.5", "Prob": np.mean(half_tot > 0.5), "Bookie": 1.40},
-        {"Market": "1st Half Over 1.5", "Prob": np.mean(half_tot > 1.5), "Bookie": 2.80},
-        {"Market": "1st Half Over 2.5", "Prob": np.mean(half_tot > 2.5), "Bookie": 7.00}
-    ]
-
-    df = pd.DataFrame(data)
-    df["True Odds"] = df["Prob"].apply(lambda x: round(1/x, 2) if x > 0 else "High")
-    df["Value %"] = df.apply(lambda r: round(((r['Prob'] * r['Bookie']) - 1) * 100, 1) if r['Bookie'] > 0 else 0, axis=1)
-    
-    st.table(df.style.format({"Prob": "{:.1%}"}))
-    
-    top_v = df.loc[df["Value %"].idxmax()]
-    st.success(f"💎 **BEST VALUE:** {top_v['Market']} ({top_v['Value %']}% Edge)")
+        st.success(f"💎 **BEST VALUE:** {best['Market']} ({best['Edge %']}% Edge)")
