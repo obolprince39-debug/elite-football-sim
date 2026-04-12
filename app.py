@@ -2,8 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 1. STUDIO-GRADE UI CONFIG (FIXED SYNTAX) ---
+# --- 1. STUDIO-GRADE UI CONFIG (STRICT SYNTAX) ---
 st.set_page_config(page_title="HighStakes: Elite Command", layout="wide")
+
+# Using triple quotes to ensure CSS block is never unterminated
 st.markdown("""
     <style>
     .main { background-color: #0b0e14; color: #e1e1e1; font-family: 'Inter', sans-serif; }
@@ -25,20 +27,20 @@ st.markdown("## 🏟️ Match Architecture")
 col1, col2, col3 = st.columns([1, 1, 1.2])
 
 with col1:
-    h_name = st.text_input("HOME TEAM", placeholder="e.g. ARSENAL").upper()
-    h_lineup = st.text_area("Starting XI", placeholder="List starters...", height=150)
+    h_name = st.text_input("HOME TEAM", placeholder="Enter Home Team Name...").upper()
+    h_lineup = st.text_area("Home Starting XI", placeholder="List the 11 starters here...", height=150)
 
 with col2:
-    a_name = st.text_input("AWAY TEAM", placeholder="e.g. MAN CITY").upper()
-    a_lineup = st.text_area("Starting XI ", placeholder="List starters...", height=150)
+    a_name = st.text_input("AWAY TEAM", placeholder="Enter Away Team Name...").upper()
+    a_lineup = st.text_area("Away Starting XI", placeholder="List the 11 starters here...", height=150)
 
 with col3:
     league_type = st.selectbox("League / Competition", 
         ["EPL", "La Liga", "Serie A", "Bundesliga", "Ligue 1", "NPFL", "UCL", "UEL", "International"])
-    m_seriousness = st.selectbox("Match Category", 
-        ["Friendly", "League Match", "Local Derby", "Relegation Battle", "Title Decider", "Cup Final"])
-    h2h_data = st.text_area("H2H History", placeholder="Previous meetings...", height=65)
-    form_data = st.text_area("Form History", placeholder="Recent form...", height=65)
+    m_seriousness = st.selectbox("Match Category / Intensity", 
+        ["Friendly", "Standard League Match", "Local Derby", "Relegation Battle", "Title Decider", "Cup Final / Knockout"])
+    h2h_data = st.text_area("H2H History", placeholder="Previous meeting results...", height=65)
+    form_data = st.text_area("Form History", placeholder="Last 5 games form...", height=65)
 
 # --- SECTION 2: THE INJURY CLINIC ---
 st.markdown("## 🏥 Medical & Injury Matrix")
@@ -79,43 +81,44 @@ a_def = r4.number_input(f"{a_name or 'A'} Def. Rating", value=1.0)
 # --- SECTION 4: ODDS & SIMULATION ---
 st.markdown("## 💰 Market Analysis")
 o1, o2, o3, o4, o5 = st.columns(5)
-bk_1 = o1.number_input("Bookie: 1", value=0.0)
-bk_x = o2.number_input("Bookie: X", value=0.0)
-bk_2 = o3.number_input("Bookie: 2", value=0.0)
-bk_ov25 = o4.number_input("Bookie: Ov 2.5", value=0.0)
-bk_gg = o5.number_input("Bookie: GG", value=0.0)
+bk_1 = o1.number_input("Bookie Odds: 1", value=0.0)
+bk_x = o2.number_input("Bookie Odds: X", value=0.0)
+bk_2 = o3.number_input("Bookie Odds: 2", value=0.0)
+bk_ov25 = o4.number_input("Bookie Odds: Ov 2.5", value=0.0)
+bk_gg = o5.number_input("Bookie Odds: GG", value=0.0)
 
 if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
+    # Automated xG Weighting
     h_base = ((h_sot * 0.18) + (h_bc * 0.40) + (h_pos * 0.005)) * (1 - (h_pen * 0.12)) * (1/a_def)
     a_base = ((a_sot * 0.18) + (a_bc * 0.40) + (a_pos * 0.005)) * (1 - (a_pen * 0.12)) * (1/h_def)
     
-    m_int = {"Friendly": 0.8, "League Match": 1.0, "Local Derby": 1.2, "Relegation Battle": 1.15, "Title Decider": 1.3, "Cup Final": 1.4}[m_seriousness]
+    m_int = {"Friendly": 0.8, "Standard League Match": 1.0, "Local Derby": 1.2, "Relegation Battle": 1.15, "Title Decider": 1.3, "Cup Final / Knockout": 1.4}[m_seriousness]
     h_final, a_final = h_base * m_int, a_base * m_int
     
     h_sim, a_sim = np.random.poisson(max(0.1, h_final), 10000), np.random.poisson(max(0.1, a_final), 10000)
     total_goals = h_sim + a_sim
     
-    # FINAL TRUTHFUL MARKET LIST
+    # FULL TRUTHFUL MARKET LIST
     data = [
-        {"Market": "HOME WIN (1)", "Prob": np.mean(h_sim > a_sim), "Bookie": bk_1},
-        {"Market": "DRAW (X)", "Prob": np.mean(h_sim == a_sim), "Bookie": bk_x},
-        {"Market": "AWAY WIN (2)", "Prob": np.mean(h_sim < a_sim), "Bookie": bk_2},
-        {"Market": "GG (BTTS)", "Prob": np.mean((h_sim > 0) & (a_sim > 0)), "Bookie": bk_gg},
-        {"Market": "NG (No Goal)", "Prob": 1 - np.mean((h_sim > 0) & (a_sim > 0)), "Bookie": 1.90},
+        {"Market": "Match Result (1)", "Prob": np.mean(h_sim > a_sim), "Bookie": bk_1},
+        {"Market": "Match Result (X)", "Prob": np.mean(h_sim == a_sim), "Bookie": bk_x},
+        {"Market": "Match Result (2)", "Prob": np.mean(h_sim < a_sim), "Bookie": bk_2},
+        {"Market": "GG (Both Teams Score)", "Prob": np.mean((h_sim > 0) & (a_sim > 0)), "Bookie": bk_gg},
+        {"Market": "NG (No Goal)", "Prob": 1 - np.mean((h_sim > 0) & (a_sim > 0)), "Bookie": 1.95},
         {"Market": "Double Chance (1X)", "Prob": np.mean(h_sim >= a_sim), "Bookie": 1.30},
-        {"Market": "Double Chance (X2)", "Prob": np.mean(a_sim >= h_sim), "Bookie": 1.40},
+        {"Market": "Double Chance (X2)", "Prob": np.mean(a_sim >= h_sim), "Bookie": 1.45},
         {"Market": "Double Chance (12)", "Prob": np.mean(h_sim != a_sim), "Bookie": 1.25},
-        {"Market": "Over 0.5 Goals", "Prob": np.mean(total_goals > 0.5), "Bookie": 1.05},
+        {"Market": "Corners Over 9.5", "Prob": 1.0 if (h_sot + a_sot) * 1.4 > 9.5 else 0.48, "Bookie": 1.85},
+        {"Market": "Over 0.5 Goals", "Prob": np.mean(total_goals > 0.5), "Bookie": 1.04},
         {"Market": "Over 1.5 Goals", "Prob": np.mean(total_goals > 1.5), "Bookie": 1.25},
         {"Market": "Over 2.5 Goals", "Prob": np.mean(total_goals > 2.5), "Bookie": bk_ov25},
         {"Market": "Over 3.5 Goals", "Prob": np.mean(total_goals > 3.5), "Bookie": 3.20},
-        {"Market": "Over 4.5 Goals", "Prob": np.mean(total_goals > 4.5), "Bookie": 5.50},
-        {"Market": "3+ Goals Streak (Yes)", "Prob": np.mean(h_sim >= 3) or np.mean(a_sim >= 3), "Bookie": 2.20},
-        {"Market": "Handicap (-1.5 Home)", "Prob": np.mean((h_sim - 1.5) > a_sim), "Bookie": 3.80},
-        {"Market": "Corners Over 9.5", "Prob": 1.0 if (h_sot + a_sot) * 1.4 > 9.5 else 0.45, "Bookie": 1.80},
-        {"Market": "1st Half Over 0.5", "Prob": np.mean(total_goals * 0.44 > 0.5), "Bookie": 1.40},
-        {"Market": "1st Half Over 1.5", "Prob": np.mean(total_goals * 0.44 > 1.5), "Bookie": 2.80},
-        {"Market": "1st Half Over 2.5", "Prob": np.mean(total_goals * 0.44 > 2.5), "Bookie": 6.00}
+        {"Market": "Over 4.5 Goals", "Prob": np.mean(total_goals > 4.5), "Bookie": 6.50},
+        {"Market": "Handicap (-1.5 Home)", "Prob": np.mean((h_sim - 1.5) > a_sim), "Bookie": 3.50},
+        {"Market": "3+ Goal Streak (Yes)", "Prob": np.mean(h_sim >= 3) or np.mean(a_sim >= 3), "Bookie": 2.20},
+        {"Market": "1st Half Over 0.5", "Prob": np.mean(total_goals * 0.44 > 0.5), "Bookie": 1.42},
+        {"Market": "1st Half Over 1.5", "Prob": np.mean(total_goals * 0.44 > 1.5), "Bookie": 2.85},
+        {"Market": "1st Half Over 2.5", "Prob": np.mean(total_goals * 0.44 > 2.5), "Bookie": 7.00}
     ]
 
     for d in data: 
@@ -124,4 +127,4 @@ if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
     
     st.table(pd.DataFrame(data).style.format({"Prob": "{:.1%}", "Value": "{:.1%}"}))
     best = pd.DataFrame(data).loc[pd.DataFrame(data)['Value'].idxmax()]
-    st.success(f"💎 **HIGHSTAKES SUMMARY:** Best value in **{best['Market']}** with a **{best['Value']:.1%}** edge.")
+    st.success(f"💎 **HIGHSTAKES SUMMARY:** Best value in **{best['Market']}** ({best['Value']:.1%} edge).")
