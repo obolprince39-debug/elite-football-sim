@@ -94,12 +94,11 @@ if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
         if not f: return 1.0
         clean = f.upper().replace(" ", "")
         pts = sum({'W':1,'D':0.5,'L':0}.get(c, 0.5) for c in clean)
-        # Clamped form score to prevent extreme outliers
         return np.clip(0.9 + ((pts/max(1,len(clean))) * 0.2), 0.8, 1.2)
     
     m_int = {"Standard League": 1.0, "Local Derby": 1.15, "Cup Final": 1.3, "Friendly": 0.8}[m_type]
     
-    # PROTECTIVE LOGIC: max(0.01, ...) prevents Poisson from crashing on negative values
+    # Defensive normalization and xG calculation
     h_xg_raw = ((h_sot * 0.16) + (h_bc * 0.44) + (h_pos * 0.005)) * f_score(h_form) * (1 - h_penalty) * h_adv * m_int * (1/max(0.5, a_def))
     a_xg_raw = ((a_sot * 0.16) + (a_bc * 0.44) + (a_pos * 0.005)) * f_score(a_form) * (1 - a_penalty) * m_int * (1/max(0.5, h_def))
     
@@ -132,9 +131,15 @@ if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
     ]
 
     df = pd.DataFrame(markets)
-    # Safer True Odds calculation
     df["True Odds"] = df["Prob"].apply(lambda x: round(1/x, 2) if x > 0.001 else "INF")
-    df["Edge %"] = df.apply(lambda r: round(((r['Prob'] * r['Book']) - 1) * 100, 1) if (r['Book'] > 0 and isinstance(r['True Odds'], float)) else 0, axis=1)
+    
+    # Calculation for Edge %
+    def calc_edge(row):
+        if row['Book'] > 0 and isinstance(row['True Odds'], (int, float)):
+            return round(((row['Prob'] * row['Book']) - 1) * 100, 1)
+        return 0.0
+
+    df["Edge %"] = df.apply(calc_edge, axis=1)
 
     st.table(df[['Market', 'Prob', 'True Odds', 'Edge %']].style.format({"Prob": "{:.1%}"}))
     
@@ -144,24 +149,3 @@ if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
         st.success(f"💎 **BEST VALUE:** {best['Market']} ({best['Edge %']}% Edge)")
     else:
         st.warning("⚠️ No positive edge found in current markets.")
-        {"Market": "Over 0.5 Goals", "Prob": np.mean(tot > 0.5), "Book": 1.05},
-        {"Market": "Over 1.5 Goals", "Prob": np.mean(tot > 1.5), "Book": 1.25},
-        {"Market": "Over 2.5 Goals", "Prob": np.mean(tot > 2.5), "Book": bk_ov25},
-        {"Market": "Over 3.5 Goals", "Prob": np.mean(tot > 3.5), "Book": 2.80},
-        {"Market": "Over 4.5 Goals", "Prob": np.mean(tot > 4.5), "Book": 5.50},
-        {"Market": "Handicap: Home (-1.5)", "Prob": np.mean(h_sim - a_sim > 1.5), "Book": 2.10},
-        {"Market": "1st Half: Over 0.5", "Prob": np.mean(half_tot > 0.5), "Book": 1.40},
-        {"Market": "1st Half: Over 1.5", "Prob": np.mean(half_tot > 1.5), "Book": 2.90},
-        {"Market": "1st Half: Over 2.5", "Prob": np.mean(half_tot > 2.5), "Book": 7.00}
-    ]
-
-    df = pd.DataFrame(markets)
-    df["True Odds"] = df["Prob"].apply(lambda x: round(1/x, 2) if x > 0.01 else "High")
-    df["Edge %"] = df.apply(lambda r: round(((r['Prob'] * r['Book']) - 1) * 100, 1) if r['Book'] > 0 else 0, axis=1)
-
-    st.table(df[['Market', 'Prob', 'True Odds', 'Edge %']].style.format({"Prob": "{:.1%}"}))
-    
-    val = df[df["Edge %"] > 0]
-    if not val.empty:
-        best = val.loc[val["Edge %"].idxmax()]
-        st.success(f"💎 **BEST VALUE:** {best['Market']} ({best['Edge %']}% Edge)")
