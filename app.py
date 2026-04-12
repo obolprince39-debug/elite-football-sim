@@ -2,176 +2,191 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 1. SETUP & STYLING ---
-st.set_page_config(page_title="HighStakes: Elite Command", layout="wide")
+# ==============================
+# 🔧 CONFIG
+# ==============================
+st.set_page_config(
+    page_title="HighStakes: Elite Command",
+    layout="wide"
+)
 
+# ==============================
+# 🎨 UI STYLING
+# ==============================
 st.markdown("""
-    <style>
-    .main { background-color: #0b0e14; color: #e1e1e1; font-family: 'Inter', sans-serif; }
-    .stTextInput>div>div>input, .stTextArea>div>textarea, .stSelectbox>div>div, .stNumberInput>div>div>input { 
-        background-color: #161b22 !important; border: 1px solid #30363d !important; color: white !important; 
-    }
-    .stButton>button { 
-        background: linear-gradient(135deg, #e63946, #a8222e); color: white; border: none; 
-        font-weight: 700; height: 3.5em; border-radius: 8px; width: 100%; cursor: pointer;
-    }
-    h2, h3 { color: #58a6ff; font-weight: 800; border-bottom: 2px solid #30363d; padding-bottom: 5px; margin-top: 20px; }
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+.main {
+    background-color: #0b0e14;
+    color: #e1e1e1;
+}
+.stTextInput input, .stTextArea textarea, .stNumberInput input {
+    background-color: #161b22 !important;
+    color: white !important;
+}
+.stButton button {
+    background: linear-gradient(135deg, #e63946, #a8222e);
+    color: white;
+    font-weight: bold;
+    height: 3em;
+    border-radius: 8px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 st.title("🛡️ HighStakes | Elite Command Center")
 
-# Use a form to batch updates and prevent constant reruns
-with st.form("match_setup"):
-    # --- SECTION 1: MATCH ARCHITECTURE ---
-    st.markdown("## 🏟️ Match Architecture")
-    col1, col2, col3 = st.columns([1, 1, 1.2])
+# ==============================
+# 🧠 HELPER FUNCTIONS
+# ==============================
 
-    with col1:
-        h_name = st.text_input("HOME TEAM", "ARSENAL").upper()
-        h_xi = st.text_area(f"{h_name} Starting XI", "Enter starters...", height=100)
-        h_form = st.text_input(f"{h_name} Form (e.g. WWDLW)", "WWDLW")
+def form_score(form):
+    if not form:
+        return 1.0
+    clean = "".join([c for c in form.upper() if c in "WDL"])
+    if not clean:
+        return 1.0
 
-    with col2:
-        a_name = st.text_input("AWAY TEAM", "NEWCASTLE").upper()
-        a_xi = st.text_area(f"{a_name} Starting XI", "Enter starters...", height=100)
-        a_form = st.text_input(f"{a_name} Form (e.g. LDWLL)", "LDWLL")
+    pts = sum({"W": 1, "D": 0.5, "L": 0}[c] for c in clean)
+    return np.clip(0.9 + (pts / len(clean)) * 0.2, 0.8, 1.2)
 
-    with col3:
-        m_type = st.selectbox("Match Category", ["Standard League", "Local Derby", "Cup Final", "Friendly"])
-        h_adv = st.number_input("Home Field Advantage", value=1.10, step=0.05, min_value=1.0)
-        h2h_data = st.text_area("H2H Context", "History/Trends...", height=68)
 
-    # --- SECTION 2: THE INJURY CLINIC ---
-    st.markdown("## 🏥 Medical & Injury Matrix")
-    inj_sev = {"None": 0.0, "Knock": 0.05, "Hamstring": 0.15, "ACL/Broken Bone": 0.35}
-    imp_val = {"Key Player (Irreplaceable)": 1.3, "Regular Starter": 1.0, "Squad Rotation": 0.5}
+def calculate_xg(sot, bc, pos, form, penalty, defense, adv=1.0, intensity=1.0):
+    base = (sot * 0.14) + (bc * 0.5)
+    interaction = (sot * bc) * 0.02
+    pos_adj = np.log1p(pos) * 0.02
 
-    def get_injury_inputs(team, t_key):
-        penalty = 0.0
-        st.write(f"**{team} Availability**")
-        for i in range(1, 3): # Reduced to 2 for UI cleanliness, can be increased
-            c1, c2, c3 = st.columns([2, 1, 1])
-            name = c1.text_input(f"Player {i}", key=f"{t_key}_n{i}")
-            sev = c2.selectbox("Severity", list(inj_sev.keys()), key=f"{t_key}_s{i}")
-            imp = c3.selectbox("Importance", list(imp_val.keys()), key=f"{t_key}_i{i}")
-            if name:
-                penalty += inj_sev[sev] * imp_val[imp]
-        return min(penalty, 0.6) # Cap penalty at 60% reduction
+    xg = (base + interaction + pos_adj)
+    xg *= form_score(form)
+    xg *= (1 - penalty)
+    xg *= adv
+    xg *= intensity
+    xg *= (1 / defense)
 
-    col_inj_h, col_inj_a = st.columns(2)
-    with col_inj_h: h_penalty = get_injury_inputs(h_name, "H")
-    with col_inj_a: a_penalty = get_injury_inputs(a_name, "A")
+    return max(0.01, xg)
 
-    # --- SECTION 3: TACTICAL DATA ENGINE ---
-    st.markdown("## 📈 Tactical Data Engine")
-    r1, r2, r3, r4 = st.columns(4)
-    h_sot = r1.number_input(f"{h_name} SoT", value=5.1, min_value=0.0)
-    a_sot = r1.number_input(f"{a_name} SoT", value=4.5, min_value=0.0)
-    h_bc = r2.number_input(f"{h_name} Big Chances", value=2.4, min_value=0.0)
-    a_bc = r2.number_input(f"{a_name} Big Chances", value=1.8, min_value=0.0)
-    h_pos = r3.number_input(f"{h_name} Possession %", value=55.0, min_value=0.0, max_value=100.0)
-    a_pos = r3.number_input(f"{a_name} Possession %", value=45.0, min_value=0.0, max_value=100.0)
-    h_def = r4.number_input(f"{h_name} Def. Rating", value=0.8, min_value=0.1)
-    a_def = r4.number_input(f"{a_name} Def. Rating", value=1.4, min_value=0.1)
 
-    st.markdown("## 💰 Market Analysis")
-    o1, o2, o3, o4, o5 = st.columns(5)
-    bk_1 = o1.number_input("Odds: 1", value=1.45)
-    bk_x = o2.number_input("Odds: X", value=4.50)
-    bk_2 = o3.number_input("Odds: 2", value=6.50)
-    bk_ov25 = o4.number_input("Odds: Ov 2.5", value=1.65)
-    bk_gg = o5.number_input("Odds: GG", value=1.75)
-
-    submit = st.form_submit_button("🚀 EXECUTE 10,000 RUN SIMULATION")
-
-# --- CACHED SIMULATION ENGINE ---
 @st.cache_data
 def run_simulation(h_xg, a_xg):
-    h_sim = np.random.poisson(h_xg, 10000)
-    a_sim = np.random.poisson(a_xg, 10000)
-    half_tot = np.random.poisson((h_xg + a_xg) * 0.44, 10000)
-    return h_sim, a_sim, half_tot
+    game_factor = np.random.normal(1, 0.1, 10000)
 
-# --- EXECUTION ---
+    h_sim = np.random.poisson(h_xg * game_factor)
+    a_sim = np.random.poisson(a_xg * game_factor)
+
+    return h_sim, a_sim
+
+
+# ==============================
+# 🏟️ INPUT FORM
+# ==============================
+with st.form("match_form"):
+
+    st.subheader("🏟️ Match Setup")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        h_name = st.text_input("Home Team", "ARSENAL")
+        h_form = st.text_input("Form (W/D/L)", "WWDLW")
+        h_sot = st.number_input("Shots on Target", 0.0, value=5.0)
+        h_bc = st.number_input("Big Chances", 0.0, value=2.0)
+        h_pos = st.number_input("Possession %", 0.0, 100.0, value=55.0)
+        h_def = st.number_input("Def Rating", 0.1, value=0.8)
+
+    with col2:
+        a_name = st.text_input("Away Team", "NEWCASTLE")
+        a_form = st.text_input("Form (W/D/L)", "LDWLL")
+        a_sot = st.number_input("Shots on Target ", 0.0, value=4.0)
+        a_bc = st.number_input("Big Chances ", 0.0, value=1.5)
+        a_pos = st.number_input("Possession % ", 0.0, 100.0, value=45.0)
+        a_def = st.number_input("Def Rating ", 0.1, value=1.4)
+
+    st.subheader("⚔️ Match Context")
+
+    m_type = st.selectbox(
+        "Match Type",
+        ["Standard", "Derby", "Final", "Friendly"]
+    )
+
+    h_adv = st.number_input("Home Advantage", value=1.1)
+
+    submit = st.form_submit_button("🚀 Run Simulation")
+
+
+# ==============================
+# ⚙️ EXECUTION
+# ==============================
 if submit:
-    def f_score(f): 
-        if not f: return 1.0
-        clean = "".join([c for c in f.upper() if c in 'WDL'])
-        if not clean: return 1.0
-        pts = sum({'W':1,'D':0.5,'L':0}.get(c, 0.5) for c in clean)
-        return np.clip(0.9 + ((pts/len(clean)) * 0.2), 0.8, 1.2)
-    
-    m_int = {"Standard League": 1.0, "Local Derby": 1.15, "Cup Final": 1.3, "Friendly": 0.8}[m_type]
-    
-    h_xg = max(0.01, ((h_sot * 0.16) + (h_bc * 0.44) + (h_pos * 0.005)) * f_score(h_form) * (1 - h_penalty) * h_adv * m_int * (1/a_def))
-    a_xg = max(0.01, ((a_sot * 0.16) + (a_bc * 0.44) + (a_pos * 0.005)) * f_score(a_form) * (1 - a_penalty) * m_int * (1/h_def))
-    
-    h_sim, a_sim, half_tot = run_simulation(h_xg, a_xg)
-    tot = h_sim + a_sim
 
-    # Distribution Logic
-    st.markdown("### 📊 Goal Probability Distribution")
-    h_dist = np.bincount(h_sim, minlength=6)[:6] / 10000
-    a_dist = np.bincount(a_sim, minlength=6)[:6] / 10000
-    chart_data = pd.DataFrame({h_name: h_dist, a_name: a_dist})
-    st.bar_chart(chart_data)
+    intensity_map = {
+        "Standard": 1.0,
+        "Derby": 1.15,
+        "Final": 1.3,
+        "Friendly": 0.8
+    }
+
+    intensity = intensity_map[m_type]
+
+    h_xg = calculate_xg(
+        h_sot, h_bc, h_pos, h_form, 0, a_def, h_adv, intensity
+    )
+
+    a_xg = calculate_xg(
+        a_sot, a_bc, a_pos, a_form, 0, h_def, 1.0, intensity
+    )
+
+    h_sim, a_sim = run_simulation(h_xg, a_xg)
+
+    total = h_sim + a_sim
+
+    # ==============================
+    # 📊 RESULTS
+    # ==============================
+    st.subheader("📊 Probability Distribution")
+
+    h_dist = np.bincount(h_sim, minlength=6)[:6] / len(h_sim)
+    a_dist = np.bincount(a_sim, minlength=6)[:6] / len(a_sim)
+
+    df_chart = pd.DataFrame({
+        h_name: h_dist,
+        a_name: a_dist
+    })
+
+    st.bar_chart(df_chart)
+
+    # ==============================
+    # 📈 MARKETS
+    # ==============================
+    st.subheader("💰 Market Probabilities")
 
     markets = [
-        {"Market": "1x2: Home (1)", "Prob": np.mean(h_sim > a_sim), "Book": bk_1},
-        {"Market": "1x2: Draw (X)", "Prob": np.mean(h_sim == a_sim), "Book": bk_x},
-        {"Market": "1x2: Away (2)", "Prob": np.mean(h_sim < a_sim), "Book": bk_2},
-        {"Market": "GG (BTTS - Yes)", "Prob": np.mean((h_sim > 0) & (a_sim > 0)), "Book": bk_gg},
-        {"Market": "Over 2.5 Goals", "Prob": np.mean(tot > 2.5), "Book": bk_ov25},
+        ["Home Win", np.mean(h_sim > a_sim)],
+        ["Draw", np.mean(h_sim == a_sim)],
+        ["Away Win", np.mean(h_sim < a_sim)],
+        ["BTTS", np.mean((h_sim > 0) & (a_sim > 0))],
+        ["Over 2.5", np.mean(total > 2.5)]
     ]
 
-    df = pd.DataFrame(markets)
-    df["True Odds"] = df["Prob"].apply(lambda x: round(1/x, 2) if x > 0.001 else "INF")
-    df["Edge %"] = round(((df["Prob"] * df["Book"]) - 1) * 100, 1)
+    df = pd.DataFrame(markets, columns=["Market", "Probability"])
 
-    st.table(df[['Market', 'Prob', 'True Odds', 'Edge %']].style.format({"Prob": "{:.1%}"}))
-    
-    val = df[df["Edge %"] > 0]
-    if not val.empty:
-        best = val.loc[val["Edge %"].idxmax()]
-        st.success(f"💎 **BEST VALUE:** {best['Market']} ({best['Edge %']}% Edge)")
-        {"Market": "1x2: Home (1)", "Prob": np.mean(h_sim > a_sim), "Book": bk_1},
-        {"Market": "1x2: Draw (X)", "Prob": np.mean(h_sim == a_sim), "Book": bk_x},
-        {"Market": "1x2: Away (2)", "Prob": np.mean(h_sim < a_sim), "Book": bk_2},
-        {"Market": "GG (BTTS - Yes)", "Prob": np.mean((h_sim > 0) & (a_sim > 0)), "Book": bk_gg},
-        {"Market": "NG (BTTS - No)", "Prob": 1 - np.mean((h_sim > 0) & (a_sim > 0)), "Book": 1.95},
-        {"Market": "3+ Goal Streak (Yes)", "Prob": np.mean((h_sim >= 3) | (a_sim >= 3)), "Book": 2.10},
-        {"Market": "Double Chance (1X)", "Prob": np.mean(h_sim >= a_sim), "Book": 1.25},
-        {"Market": "Double Chance (X2)", "Prob": np.mean(a_sim >= h_sim), "Book": 2.40},
-        {"Market": "Double Chance (12)", "Prob": np.mean(h_sim != a_sim), "Book": 1.22},
-        {"Market": "Corners Over 9.5", "Prob": 0.52 if (h_sot+a_sot) > 9 else 0.45, "Book": 1.85},
-        {"Market": "Over 0.5 Goals", "Prob": np.mean(tot > 0.5), "Book": 1.05},
-        {"Market": "Over 1.5 Goals", "Prob": np.mean(tot > 1.5), "Book": 1.25},
-        {"Market": "Over 2.5 Goals", "Prob": np.mean(tot > 2.5), "Book": bk_ov25},
-        {"Market": "Over 3.5 Goals", "Prob": np.mean(tot > 3.5), "Book": 2.80},
-        {"Market": "Over 4.5 Goals", "Prob": np.mean(tot > 4.5), "Book": 5.50},
-        {"Market": "Handicap: Home (-1.5)", "Prob": np.mean(h_sim - a_sim > 1.5), "Book": 2.10},
-        {"Market": "1st Half: Over 0.5", "Prob": np.mean(half_tot > 0.5), "Book": 1.40},
-        {"Market": "1st Half: Over 1.5", "Prob": np.mean(half_tot > 1.5), "Book": 2.90},
-        {"Market": "1st Half: Over 2.5", "Prob": np.mean(half_tot > 2.5), "Book": 7.00}
-    ]
+    df["True Odds"] = df["Probability"].apply(
+        lambda x: round(1 / x, 2) if x > 0 else None
+    )
 
-    df = pd.DataFrame(markets)
-    df["True Odds"] = df["Prob"].apply(lambda x: round(1/x, 2) if x > 0.001 else "INF")
-    
-    # Calculation for Edge %
-    def calc_edge(row):
-        if row['Book'] > 0 and isinstance(row['True Odds'], (int, float)):
-            return round(((row['Prob'] * row['Book']) - 1) * 100, 1)
-        return 0.0
+    df["Confidence"] = df["Probability"].apply(
+        lambda x: "High" if x > 0.6 else "Medium" if x > 0.4 else "Low"
+    )
 
-    df["Edge %"] = df.apply(calc_edge, axis=1)
+    st.dataframe(df.style.format({"Probability": "{:.2%}"}))
 
-    st.table(df[['Market', 'Prob', 'True Odds', 'Edge %']].style.format({"Prob": "{:.1%}"}))
-    
-    val = df[df["Edge %"] > 0]
-    if not val.empty:
-        best = val.loc[val["Edge %"].idxmax()]
-        st.success(f"💎 **BEST VALUE:** {best['Market']} ({best['Edge %']}% Edge)")
-    else:
-        st.warning("⚠️ No positive edge found in current markets.")
+    # ==============================
+    # 🧾 SUMMARY
+    # ==============================
+    st.subheader("🧾 Model Insight")
+
+    st.write(f"""
+    **Expected Goals**
+    - {h_name}: {round(h_xg,2)}
+    - {a_name}: {round(a_xg,2)}
+
+    This simulation reflects tactical input, form momentum, and match intensity.
+    """)
