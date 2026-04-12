@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 1. STUDIO-GRADE UI CONFIG ---
+# --- 1. SETUP & STYLING ---
 st.set_page_config(page_title="HighStakes: Elite Command", layout="wide")
 
 st.markdown("""
@@ -15,7 +15,7 @@ st.markdown("""
         background: linear-gradient(135deg, #e63946, #a8222e); color: white; border: none; 
         font-weight: 700; height: 3.5em; border-radius: 8px; width: 100%; cursor: pointer;
     }
-    h2, h3 { color: #58a6ff; font-weight: 800; border-bottom: 2px solid #30363d; padding-bottom: 5px; }
+    h2, h3 { color: #58a6ff; font-weight: 800; border-bottom: 2px solid #30363d; padding-bottom: 5px; margin-top: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -23,92 +23,112 @@ st.title("🛡️ HighStakes | Elite Command Center")
 
 # --- SECTION 1: MATCH ARCHITECTURE ---
 st.markdown("## 🏟️ Match Architecture")
-col_a, col_b, col_c = st.columns([1, 1, 1.2])
+col1, col2, col3 = st.columns([1, 1, 1.2])
 
-with col_a:
+with col1:
     h_name = st.text_input("HOME TEAM", "ARSENAL").upper()
+    h_xi = st.text_area(f"{h_name} Starting XI", "Raya, White, Saliba, Gabriel, Timber, Rice, Odegaard...", height=100)
     h_form = st.text_input(f"{h_name} Form (e.g. WWDLW)", "WWDLW")
 
-with col_b:
+with col2:
     a_name = st.text_input("AWAY TEAM", "NEWCASTLE").upper()
+    a_xi = st.text_area(f"{a_name} Starting XI", "Pope, Livramento, Botman, Burn, Hall, Guimaraes...", height=100)
     a_form = st.text_input(f"{a_name} Form (e.g. LDWLL)", "LDWLL")
 
-with col_c:
-    m_seriousness = st.selectbox("Match Category / Intensity", 
-        ["Friendly", "Standard League Match", "Local Derby", "Relegation Battle", "Title Decider", "Cup Final / Knockout"])
-    h2h_bias = st.slider("H2H Advantage (1.0 = Neutral)", 0.8, 1.2, 1.0, 0.05)
+with col3:
+    m_type = st.selectbox("Match Category", ["Standard League", "Local Derby", "Cup Final", "Friendly"])
+    h_adv = st.number_input("Home Field Advantage (1.0 = Standard)", value=1.10, step=0.05)
+    h2h_data = st.text_area("H2H Context", "Last 5: ARS 3 wins, NEW 1 win, 1 Draw", height=68)
 
-# --- SECTION 2: THE INJURY CLINIC (RESTORED) ---
+# --- SECTION 2: THE INJURY CLINIC ---
 st.markdown("## 🏥 Medical & Injury Matrix")
-inj_list = ["None", "Knock", "Hamstring", "ACL/Broken Bone"]
-role_list = ["Main Goalscorer", "Creative Playmaker", "Defensive Mid", "Center Back", "Goalkeeper"]
-imp_list = ["Key Player (Irreplaceable)", "Regular Starter", "Squad Rotation"]
+inj_sev = {"None": 0.0, "Knock": 0.05, "Hamstring": 0.15, "ACL/Broken Bone": 0.35}
+imp_val = {"Key Player (Irreplaceable)": 1.3, "Regular Starter": 1.0, "Squad Rotation": 0.5}
 
-def injury_row(team, idx):
-    c1, c2, c3, c4 = st.columns([1.5, 1, 1, 1])
-    name = c1.text_input(f"Player {idx}", placeholder="Name", key=f"{team}_n{idx}")
-    role = c2.selectbox("Role", role_list, key=f"{team}_p{idx}")
-    inj = c3.selectbox("Injury", inj_list, key=f"{team}_t{idx}")
-    imp = c4.selectbox("Importance", imp_list, key=f"{team}_i{idx}")
-    
-    # Logic: Severity * Importance
-    sev = {"None": 0.0, "Knock": 0.05, "Hamstring": 0.15, "ACL/Broken Bone": 0.3}
-    weight = {"Key Player (Irreplaceable)": 1.2, "Regular Starter": 1.0, "Squad Rotation": 0.5}
-    return sev[inj] * weight[imp] if name else 0
+def get_injury_penalty(team):
+    penalty = 0.0
+    with st.expander(f"🚑 {team} Injuries"):
+        for i in range(1, 4):
+            c1, c2, c3 = st.columns([2, 1, 1])
+            name = c1.text_input(f"Player {i}", key=f"{team}_n{i}")
+            sev = c2.selectbox("Severity", list(inj_sev.keys()), key=f"{team}_s{i}")
+            imp = c3.selectbox("Importance", list(imp_val.keys()), key=f"{team}_i{i}")
+            if name:
+                penalty += inj_sev[sev] * imp_val[imp]
+    return penalty
 
-h_pen, a_pen = 0, 0
-with st.expander(f"🔴 {h_name} INJURIES"):
-    for i in range(1, 4): h_pen += injury_row("H", i)
-with st.expander(f"🔵 {a_name} INJURIES"):
-    for i in range(1, 4): a_pen += injury_row("A", i)
+h_penalty = get_injury_penalty(h_name)
+a_penalty = get_injury_penalty(a_name)
 
-# --- SECTION 3: TACTICAL ENGINE ---
+# --- SECTION 3: TACTICAL DATA ENGINE ---
 st.markdown("## 📈 Tactical Data Engine")
 r1, r2, r3, r4 = st.columns(4)
-h_sot = r1.number_input(f"{h_name} SoT", value=5.0)
+h_sot = r1.number_input(f"{h_name} SoT", value=5.1)
 a_sot = r1.number_input(f"{a_name} SoT", value=4.5)
-h_bc = r2.number_input(f"{h_name} Big Chances", value=2.0)
-a_bc = r2.number_input(f"{a_name} Big Chances", value=1.5)
-h_pos = r3.number_input(f"{h_name} Possession %", value=55.0)
-a_pos = r3.number_input(f"{a_name} Possession %", value=45.0)
-h_def = r4.number_input(f"{h_name} Def. Rating", value=0.8)
-a_def = r4.number_input(f"{a_name} Def. Rating", value=1.4)
+h_bc = r2.number_input(f"{h_name} Big Chances", value=2.4)
+a_bc = r2.number_input(f"{a_name} Big Chances", value=1.8)
+h_pos = r3.number_input(f"{h_name} Possession %", value=56.0)
+a_pos = r3.number_input(f"{a_name} Possession %", value=44.0)
+h_def = r4.number_input(f"{h_name} Def. Rating", value=0.77)
+a_def = r4.number_input(f"{a_name} Def. Rating", value=1.59)
 
-st.markdown("## 💰 Bookie Odds")
+st.markdown("## 💰 Market Analysis")
 o1, o2, o3, o4, o5 = st.columns(5)
-bk_1 = o1.number_input("Home (1)", value=1.45)
-bk_x = o2.number_input("Draw (X)", value=4.50)
-bk_2 = o3.number_input("Away (2)", value=6.50)
-bk_ov25 = o4.number_input("Over 2.5", value=1.65)
-bk_gg = o5.number_input("GG (BTTS)", value=1.75)
+bk_1 = o1.number_input("Odds: 1", value=1.45)
+bk_x = o2.number_input("Odds: X", value=4.50)
+bk_2 = o3.number_input("Odds: 2", value=6.50)
+bk_ov25 = o4.number_input("Odds: Ov 2.5", value=1.65)
+bk_gg = o5.number_input("Odds: GG", value=1.75)
 
-# --- EXECUTION ---
+# --- ENGINE ---
 if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
-    # Form Multipliers
-    def get_f(f): return 0.9 + ((sum({'W':1,'D':0.5,'L':0}.get(c, 0.5) for c in f.upper())/max(1,len(f)))*0.2)
-    m_int = {"Friendly": 0.8, "Standard League Match": 1.0, "Local Derby": 1.2, "Relegation Battle": 1.15, "Title Decider": 1.3, "Cup Final / Knockout": 1.4}[m_seriousness]
+    # Form logic
+    def f_score(f): return 0.9 + ((sum({'W':1,'D':0.5,'L':0}.get(c, 0.5) for c in f.upper())/max(1,len(f)))*0.2)
+    m_int = {"Standard League": 1.0, "Local Derby": 1.15, "Cup Final": 1.3, "Friendly": 0.8}[m_type]
     
-    # The Core xG Formula (Restored with Penalty & Intensity)
-    h_xg = ((h_sot * 0.16) + (h_bc * 0.42) + (h_pos * 0.005)) * get_f(h_form) * (1 - h_pen) * m_int * h2h_bias * (1/max(0.4, a_def))
-    a_xg = ((a_sot * 0.16) + (a_bc * 0.42) + (a_pos * 0.005)) * get_f(a_form) * (1 - a_pen) * m_int * (1/max(0.4, h_def))
+    # Core xG: (Efficiency * Volume) * Momentum * Fitness * Context
+    h_xg = ((h_sot * 0.16) + (h_bc * 0.44) + (h_pos * 0.005)) * f_score(h_form) * (1 - h_penalty) * h_adv * m_int * (1/max(0.5, a_def))
+    a_xg = ((a_sot * 0.16) + (a_bc * 0.44) + (a_pos * 0.005)) * f_score(a_form) * (1 - a_penalty) * m_int * (1/max(0.5, h_def))
     
     h_sim = np.random.poisson(h_xg, 10000)
     a_sim = np.random.poisson(a_xg, 10000)
     tot = h_sim + a_sim
-    half_tot = np.random.poisson((h_xg + a_xg) * 0.44, 10000)
+    half_h = np.random.poisson(h_xg * 0.44, 10000)
+    half_a = np.random.poisson(a_xg * 0.44, 10000)
+    half_tot = half_h + half_a
 
-    data = [
-        {"Market": "Match Result (1)", "Prob": np.mean(h_sim > a_sim), "Bookie": bk_1},
-        {"Market": "Match Result (X)", "Prob": np.mean(h_sim == a_sim), "Bookie": bk_x},
-        {"Market": "Match Result (2)", "Prob": np.mean(h_sim < a_sim), "Bookie": bk_2},
-        {"Market": "GG (BTTS)", "Prob": np.mean((h_sim > 0) & (a_sim > 0)), "Bookie": bk_gg},
-        {"Market": "NG (No Goal)", "Prob": 1 - np.mean((h_sim > 0) & (a_sim > 0)), "Bookie": 1.90},
-        {"Market": "3+ Goal Streak (Yes)", "Prob": np.mean((h_sim >= 3) | (a_sim >= 3)), "Bookie": 2.20},
-        {"Market": "Double Chance (1X)", "Prob": np.mean(h_sim >= a_sim), "Bookie": 1.25},
-        {"Market": "Double Chance (X2)", "Prob": np.mean(a_sim >= h_sim), "Bookie": 2.50},
-        {"Market": "Double Chance (12)", "Prob": np.mean(h_sim != a_sim), "Bookie": 1.20},
-        {"Market": "Corners Over 9.5", "Prob": 0.52 if (h_sot + a_sot) > 9 else 0.44, "Bookie": 1.85},
-        {"Market": "Over 0.5 Goals", "Prob": np.mean(tot > 0.5), "Bookie": 1.05},
+    markets = [
+        {"Market": "1x2: Home (1)", "Prob": np.mean(h_sim > a_sim), "Book": bk_1},
+        {"Market": "1x2: Draw (X)", "Prob": np.mean(h_sim == a_sim), "Book": bk_x},
+        {"Market": "1x2: Away (2)", "Prob": np.mean(h_sim < a_sim), "Book": bk_2},
+        {"Market": "GG (BTTS - Yes)", "Prob": np.mean((h_sim > 0) & (a_sim > 0)), "Book": bk_gg},
+        {"Market": "NG (BTTS - No)", "Prob": 1 - np.mean((h_sim > 0) & (a_sim > 0)), "Book": 1.95},
+        {"Market": "3+ Goal Streak (Yes)", "Prob": np.mean((h_sim >= 3) | (a_sim >= 3)), "Book": 2.10},
+        {"Market": "Double Chance (1X)", "Prob": np.mean(h_sim >= a_sim), "Book": 1.25},
+        {"Market": "Double Chance (X2)", "Prob": np.mean(a_sim >= h_sim), "Book": 2.40},
+        {"Market": "Double Chance (12)", "Prob": np.mean(h_sim != a_sim), "Book": 1.22},
+        {"Market": "Corners Over 9.5", "Prob": 0.52 if (h_sot+a_sot) > 9 else 0.45, "Book": 1.85},
+        {"Market": "Over 0.5 Goals", "Prob": np.mean(tot > 0.5), "Book": 1.05},
+        {"Market": "Over 1.5 Goals", "Prob": np.mean(tot > 1.5), "Book": 1.25},
+        {"Market": "Over 2.5 Goals", "Prob": np.mean(tot > 2.5), "Book": bk_ov25},
+        {"Market": "Over 3.5 Goals", "Prob": np.mean(tot > 3.5), "Book": 2.80},
+        {"Market": "Over 4.5 Goals", "Prob": np.mean(tot > 4.5), "Book": 5.50},
+        {"Market": "Handicap: Home (-1.5)", "Prob": np.mean(h_sim - a_sim > 1.5), "Book": 2.10},
+        {"Market": "1st Half: Over 0.5", "Prob": np.mean(half_tot > 0.5), "Book": 1.40},
+        {"Market": "1st Half: Over 1.5", "Prob": np.mean(half_tot > 1.5), "Book": 2.90},
+        {"Market": "1st Half: Over 2.5", "Prob": np.mean(half_tot > 2.5), "Book": 7.00},
+    ]
+
+    df = pd.DataFrame(markets)
+    df["True Odds"] = df["Prob"].apply(lambda x: round(1/x, 2) if x > 0.01 else "High")
+    df["Value Edge %"] = df.apply(lambda r: round(((r['Prob'] * r['Book']) - 1) * 100, 1) if r['Book'] > 0 else 0, axis=1)
+
+    st.table(df[['Market', 'Prob', 'True Odds', 'Value Edge %']].style.format({"Prob": "{:.1%}"}))
+    
+    val = df[df["Value Edge %"] > 0]
+    if not val.empty:
+        best = val.loc[val["Value Edge %"].idxmax()]
+        st.success(f"💎 **BEST VALUE:** {best['Market']} with a {best['Value Edge %']}% Edge.")
         {"Market": "Over 1.5 Goals", "Prob": np.mean(tot > 1.5), "Bookie": 1.25},
         {"Market": "Over 2.5 Goals", "Prob": np.mean(tot > 2.5), "Bookie": bk_ov25},
         {"Market": "Over 3.5 Goals", "Prob": np.mean(tot > 3.5), "Bookie": 2.80},
