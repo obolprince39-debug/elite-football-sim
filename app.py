@@ -37,8 +37,8 @@ with col3:
         ["EPL", "La Liga", "Serie A", "Bundesliga", "Ligue 1", "NPFL", "UCL", "UEL", "International"])
     m_seriousness = st.selectbox("Match Category", 
         ["Friendly", "League Match", "Local Derby", "Relegation Battle", "Title Decider", "Cup Final"])
-    h2h_data = st.text_area("H2H History", placeholder="Previous meetings...", height=65)
-    form_data = st.text_area("Form History", placeholder="Recent form...", height=65)
+    h2h_data = st.text_area("H2H History", placeholder="Last 3 Meetings...", height=65)
+    form_data = st.text_area("Form History", placeholder="Last 5 Games...", height=65)
 
 # --- SECTION 2: THE INJURY CLINIC ---
 st.markdown("## 🏥 Medical & Injury Matrix")
@@ -95,7 +95,7 @@ if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
     h_sim, a_sim = np.random.poisson(max(0.1, h_final), 10000), np.random.poisson(max(0.1, a_final), 10000)
     total_goals = h_sim + a_sim
     
-    # CALCULATIONS
+    # CORRECTED MARKET LIST
     data = [
         {"Market": "HOME WIN (1)", "Prob": np.mean(h_sim > a_sim), "Bookie": bk_1},
         {"Market": "DRAW (X)", "Prob": np.mean(h_sim == a_sim), "Bookie": bk_x},
@@ -109,17 +109,18 @@ if st.button("🚀 EXECUTE 10,000 RUN SIMULATION"):
         {"Market": "Over 2.5 Goals", "Prob": np.mean(total_goals > 2.5), "Bookie": bk_ov25},
         {"Market": "Over 3.5 Goals", "Prob": np.mean(total_goals > 3.5), "Bookie": 3.20},
         {"Market": "Over 4.5 Goals", "Prob": np.mean(total_goals > 4.5), "Bookie": 5.50},
-        {"Market": "3+ Goals (Home)", "Prob": np.mean(h_sim >= 3), "Bookie": 4.50},
+        {"Market": "3+ Goals Streak (Yes)", "Prob": np.mean(h_sim >= 3) or np.mean(a_sim >= 3), "Bookie": 2.20},
         {"Market": "Handicap (-1.5 Home)", "Prob": np.mean((h_sim - 1.5) > a_sim), "Bookie": 3.80},
-        {"Market": "Corners Over 9.5", "Prob": 1 if (h_sot + a_sot) *
-        {"Market": f"{h_name} 3+ GOALS", "Prob": p_h3, "Bookie": 4.5},
-        {"Market": "CORNERS OV 9.5", "Prob": 1 if p_corn > 9.5 else 0.4, "Bookie": 1.8}
+        {"Market": "Corners Over 9.5", "Prob": 1.0 if (h_sot + a_sot) * 1.4 > 9.5 else 0.45, "Bookie": 1.80},
+        {"Market": "1st Half Over 0.5", "Prob": np.mean(total_goals * 0.44 > 0.5), "Bookie": 1.40},
+        {"Market": "1st Half Over 1.5", "Prob": np.mean(total_goals * 0.44 > 1.5), "Bookie": 2.80},
+        {"Market": "1st Half Over 2.5", "Prob": np.mean(total_goals * 0.44 > 2.5), "Bookie": 6.00}
     ]
 
     for d in data: 
-        d["True Odds"] = 1/d["Prob"] if d["Prob"] > 0 else 0
+        d["True Odds"] = 1/d["Prob"] if d["Prob"] > 0.01 else "High"
         d["Value"] = (d["Prob"] * d["Bookie"]) - 1 if d["Bookie"] > 0 else -1
     
-    st.table(pd.DataFrame(data).style.format({"Prob": "{:.1%}", "True Odds": "{:.2f}", "Value": "{:.1%}"}))
+    st.table(pd.DataFrame(data).style.format({"Prob": "{:.1%}", "Value": "{:.1%}"}))
     best = pd.DataFrame(data).loc[pd.DataFrame(data)['Value'].idxmax()]
     st.success(f"💎 **HIGHSTAKES SUMMARY:** Edge in **{best['Market']}** ({best['Value']:.1%})")
