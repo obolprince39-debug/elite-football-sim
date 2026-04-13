@@ -1,9 +1,60 @@
-import streamlit as st
+    
+    # Opponent defensive style
+    opp_defense = (
+        normalize(opp["con_pg"], 3) * 0.4 +      # Poor defense = clearances for corners
+        normalize(opp["fouls"], 20) * 0.3 +      # Desperation defending
+        (1 - normalize(opp["cs"], 20)) * 0.3   # Lack of clean sheets
+    )
+    
+    # Wide play indicator (offsides suggest aggressive wide runs)
+    wide_play = normalize(team["offsides"], 5) * 0.5 + normalize(team["fouls"], 20) * 0.2
+    
+    home = 1.0 if is_home else 0.0
+    
+    return np.array([volume, opp_defense, wide_play, home], dtype=np.float32)
+
+# ==============================
+# 🎯 MODEL PREDICTION
+# ==============================
+def predict(model, features: np.ndarray, model_name: str = "model") -> Tuple[float, Optional[str]]:
+    """
+    Safe prediction with validation.
+    Returns: (prediction, error_message)
+    """
+    if model is None:
+        return 0.0, f"{model_name} not loaded"
+    
+    # Validate feature count iimport streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
 import json
 from datetime import datetime
+import requests
+def get_api_data(team_name):
+    # Get the key from the secrets we set in Step 1
+    api_key = st.secrets["FOOTBALL_API_KEY"]
+    headers = {'X-Auth-Token': api_key}
+    
+    # We fetch the Premier League standings (PL)
+    try:
+        url = "https://api.football-data.org/v4/competitions/PL/standings"
+        response = requests.get(url, headers=headers)
+        data = response.json()
+        
+        for team in data['standings'][0]['table']:
+            # This looks for the team name you typed
+            if team_name.lower() in team['team']['name'].lower():
+                stats = {
+                    "gpg": team['goalsFor'] / team['playedGames'],
+                    "con_pg": team['goalsAgainst'] / team['playedGames'],
+                    "form": team['form'] # This gives you the WDLWW string!
+                }
+                return stats
+    except Exception as e:
+        st.error(f"API Error: {e}")
+    return None
+
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
 
@@ -195,33 +246,7 @@ def build_corner_features(team: Dict, opp: Dict, is_home: bool) -> np.ndarray:
         normalize(team["bc"], 5) * 0.3 +        # Big chances often from wide crosses
         normalize(team["pos"], 100) * 0.3      # Possession pressure
     )
-    
-    # Opponent defensive style
-    opp_defense = (
-        normalize(opp["con_pg"], 3) * 0.4 +      # Poor defense = clearances for corners
-        normalize(opp["fouls"], 20) * 0.3 +      # Desperation defending
-        (1 - normalize(opp["cs"], 20)) * 0.3   # Lack of clean sheets
-    )
-    
-    # Wide play indicator (offsides suggest aggressive wide runs)
-    wide_play = normalize(team["offsides"], 5) * 0.5 + normalize(team["fouls"], 20) * 0.2
-    
-    home = 1.0 if is_home else 0.0
-    
-    return np.array([volume, opp_defense, wide_play, home], dtype=np.float32)
-
-# ==============================
-# 🎯 MODEL PREDICTION
-# ==============================
-def predict(model, features: np.ndarray, model_name: str = "model") -> Tuple[float, Optional[str]]:
-    """
-    Safe prediction with validation.
-    Returns: (prediction, error_message)
-    """
-    if model is None:
-        return 0.0, f"{model_name} not loaded"
-    
-    # Validate feature count if model exposes feature names
+f model exposes feature names
     if hasattr(model, 'feature_names_in_'):
         expected = len(model.feature_names_in_)
         actual = len(features)
@@ -314,12 +339,25 @@ models = load_models()
 # ==============================
 # 🏟️ INPUT FORM
 # ==============================
+st.subheader("📡 API Data Sync")
+target_team = st.text_input("Enter Team Name to Sync (e.g., Arsenal)")
+
+if st.button("Fetch Team Stats"):
+    with st.spinner("Fetching..."):
+        api_stats = get_api_data(target_team)
+        if api_stats:
+            st.success(f"Found {target_team}!")
+            st.json(api_stats) # Shows you what it found
+            # This stores it so you can use these numbers in your sliders
+            st.session_state['api_gpg'] = api_stats['gpg']
+            st.session_state['api_con'] = api_stats['con_pg']
+            st.session_state['api_form'] = api_stats['form'].replace(',', '')
 with st.form("match_input"):
     st.markdown("### Match Setup")
     
     col1, col2 = st.columns(2)
 
-    def team_inputs(name: str, is_home: bool):
+        def team_inputs(name: str, is_home: bool):
         color = "🔴" if is_home else "🔵"
         st.markdown(f"**{color} {name}**")
         
@@ -327,12 +365,16 @@ with st.form("match_input"):
             "sot": st.number_input(f"Shots on Target", 0.0, 20.0, 4.5, key=f"{name}_sot"),
             "bc": st.number_input(f"Big Chances", 0.0, 10.0, 1.5, key=f"{name}_bc"),
             "bcm": st.number_input(f"Big Chances Missed", 0.0, 10.0, 0.8, key=f"{name}_bcm"),
-            "gpg": st.number_input(f"Goals/Game", 0.0, 5.0, 1.2, key=f"{name}_gpg"),
+            # UPDATED LINE BELOW
+            "gpg": st.number_input(f"Goals/Game", 0.0, 5.0, st.session_state.get("temp_gpg", 1.2), key=f"{name}_gpg"),
             "pos": st.number_input(f"Possession %", 0.0, 100.0, 50.0, key=f"{name}_pos"),
             "offsides": st.number_input(f"Offsides/Game", 0.0, 10.0, 2.0, key=f"{name}_off"),
             "fouls": st.number_input(f"Fouls/Game", 0.0, 25.0, 10.0, key=f"{name}_fouls"),
-            "con_pg": st.number_input(f"Conceded/Game", 0.0, 5.0, 1.0, key=f"{name}_con"),
+            # UPDATED LINE BELOW
+            "con_pg": st.number_input(f"Conceded/Game", 0.0, 5.0, st.session_state.get("temp_con", 1.0), key=f"{name}_con"),
             "cs": st.number_input(f"Clean Sheets", 0.0, 20.0, 5.0, key=f"{name}_cs")
+        }
+
         }
 
     with col1:
